@@ -32,6 +32,7 @@ import random, numpy as np, torch
 random.seed(42); np.random.seed(42); torch.manual_seed(42)
 ```
 ## Example
-The `examples/train_mnist.py` script demonstrates how to integrate **Fair Sampler** 
-into a simple training loop.  
+The `train_mnist.py` script shows how to integrate **Fair Sampler** into a simple training loop.  
 (MNIST dataset is used here only as a demonstration — you can replace it with any dataset.)
+
+➡️ [train_mnist.py](train_mnist.py)
