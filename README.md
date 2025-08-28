@@ -31,6 +31,7 @@ from gfs.iw import importance_weights
 import random, numpy as np, torch
 random.seed(42); np.random.seed(42); torch.manual_seed(42)
 ```
-
 ## Example
-See [`examples/train_mnist.py`](examples/train_mnist.py) for a complete training loop.
+The `examples/train_mnist.py` script demonstrates how to integrate **Fair Sampler** 
+into a simple training loop.  
+(MNIST dataset is used here only as a demonstration — you can replace it with any dataset.)
