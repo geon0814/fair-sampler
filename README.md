@@ -1,5 +1,5 @@
 # Fair Sampler
-*By Geon (Korean high school student)*
+*By Geon *
 
 **Feedback-controlled sampler applying negative feedback to keep class distribution fair and stable during AI training.**  
 Forces fast convergence to target ratios while preserving unbiased estimates via **importance weighting**.
