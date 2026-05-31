@@ -1,7 +1,7 @@
 from __future__ import annotations
 import torch
 from torch.utils.data import Sampler
-from typing import Iterator, List
+from typing import Iterator, List, Optional
 
 from .controller import SimpleFairController
 
@@ -15,18 +15,27 @@ class FairSampler(Sampler):
         controller: SimpleFairController,
         batch_size: int,
         steps_per_epoch: int,
+        replacement: bool = True,
+        generator: Optional[torch.Generator] = None,
     ):
         self.labels = labels
         self.controller = controller
         self.batch_size = batch_size
         self.steps = steps_per_epoch
+        self.replacement = replacement
+        self.generator = generator
 
     def __iter__(self) -> Iterator[List[int]]:
         for _ in range(self.steps):
             class_probs = self.controller.get_class_probs()
             sample_weights = class_probs[self.labels]
             sample_weights = sample_weights / sample_weights.sum()
-            indices = torch.multinomial(sample_weights, self.batch_size, replacement=True)
+            indices = torch.multinomial(
+                sample_weights,
+                self.batch_size,
+                replacement=self.replacement,
+                generator=self.generator,
+            )
             yield indices.tolist()
 
     def __len__(self) -> int:

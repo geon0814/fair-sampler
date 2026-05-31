@@ -19,6 +19,6 @@ def importance_weights(
     Returns:
         weights: shape (B,), mean ~1
     """
-    w = q[labels] / p[labels]
+    w = q[labels] / p[labels].clamp(min=1e-8)
     w = w / w.mean()
     return w.clamp(max=max_w)
