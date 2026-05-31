@@ -69,6 +69,16 @@ for x, y in loader:
 
 3. **Importance Weighting**: over-sampling된 클래스 샘플은 down-weight되어 `w = q[y] / p[y]`의 가중 손실을 만들고, 그래디언트 추정이 목표 분포 `q` 아래에서 unbiased하게 유지됩니다.
 
+### Controller Behavior
+
+99:1로 불균형한 데이터에서 컨트롤러가 50:50 목표를 향해 빠르게 수렴합니다.
+
+![Adaptation from 99:1 toward 50:50](assets/fair_rebalance.png)
+
+목표에 도달한 뒤에도 배치 단위 노이즈로 인해 진동(oscillation)이 발생하지만, 컨트롤러가 매 배치마다 즉시 보정합니다. 이 진동은 의도된 동작입니다.
+
+![Drift and Recovery cycles](assets/drift_recovery.png)
+
 ## API Reference
 
 ### `SimpleFairController`
