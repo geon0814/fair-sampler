@@ -16,7 +16,6 @@ except ImportError:
     HAS_MATPLOTLIB = False
 
 SEED = 42
-# 10:1 imbalance, 최소 300개 → 과적합 없이 tail 학습 가능
 LONGTAIL_COUNTS = [3000, 2500, 2000, 1600, 1200, 900, 700, 550, 400, 300]
 
 
@@ -70,8 +69,7 @@ def evaluate(model, test_loader, device, num_classes=10):
         for x, y in test_loader:
             x, y = x.to(device), y.to(device)
             preds = model(x).argmax(dim=1)
-            y_cpu = y.cpu()
-            preds_cpu = preds.cpu()
+            y_cpu, preds_cpu = y.cpu(), preds.cpu()
             for c in range(num_classes):
                 mask = y_cpu == c
                 total[c] += mask.sum()
@@ -83,13 +81,17 @@ def evaluate(model, test_loader, device, num_classes=10):
 # -----------------------------
 # [4] Train
 # -----------------------------
-def train_fair(ds_train, device, epochs=7):
+def train_fair(ds_train, device, epochs=15):
+    """FairSampler + importance weighting (q=uniform).
+
+    q=uniform: 모든 클래스를 10%씩 균등하게 학습하는 것을 목표로 함.
+    IW w=q[y]/p[y]는 oversampling된 tail class를 down-weight해 gradient를
+    q 분포에서 unbiased하게 유지한다. 충분한 에폭(≥15)이 필요하다.
+    """
     set_seed(SEED)
     aug_ds = AugmentedDataset(ds_train, class_counts=LONGTAIL_COUNTS)
     labels = torch.tensor([ds_train.dataset.targets[i].item() for i in ds_train.indices])
-
-    total = sum(LONGTAIL_COUNTS)
-    steps = total // 256  # dataset 크기에 비례, 하드코딩 없음
+    steps = sum(LONGTAIL_COUNTS) // 256
 
     controller = SimpleFairController(
         num_classes=10, alpha=2.0, lr=0.3, class_counts=LONGTAIL_COUNTS
@@ -105,19 +107,16 @@ def train_fair(ds_train, device, epochs=7):
 
     model = MLP().to(device)
     opt = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
-    loss_fn = nn.CrossEntropyLoss()
+    loss_fn = nn.CrossEntropyLoss(reduction="none")
+    q = torch.ones(10) / 10  # target: uniform
 
-    # importance_weights를 쓰지 않는 이유:
-    # IW(w = q/p)는 gradient를 q 분포에서 unbiased하게 만들지만,
-    # 수렴 중 p_tail > q_tail이 되면 w_tail < 1로 tail class를 다시 down-weight한다.
-    # 결과적으로 tail class가 받는 effective gradient = p_tail × w_tail = q_tail (자연 빈도 수준).
-    # oversampling의 tail 부스팅 효과를 IW가 상쇄하므로 이 데모에서는 biased oversampling을 선택.
-    # IW는 gradient의 statistical 정확도가 중요할 때(unbiased estimation 필요 시) 사용할 것.
     for ep in range(epochs):
         for step, (x, y) in enumerate(loader):
             x, y = x.to(device), y.to(device)
             opt.zero_grad()
-            loss = loss_fn(model(x), y)
+            p = controller.get_class_probs()
+            w = importance_weights(y.cpu(), q, p).to(device)
+            loss = (w * loss_fn(model(x), y)).mean()
             loss.backward()
             opt.step()
             controller.step(y.cpu())
@@ -127,22 +126,18 @@ def train_fair(ds_train, device, epochs=7):
     return model
 
 
-def train_vanilla(ds_train, device, epochs=7):
+def train_vanilla(ds_train, device, epochs=15):
     set_seed(SEED)
     loader = DataLoader(ds_train, batch_size=256, shuffle=True)
-
     model = MLP().to(device)
     opt = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
     loss_fn = nn.CrossEntropyLoss()
-
     for _ in range(epochs):
         for x, y in loader:
             x, y = x.to(device), y.to(device)
             opt.zero_grad()
-            loss = loss_fn(model(x), y)
-            loss.backward()
+            loss_fn(model(x), y).backward()
             opt.step()
-
     return model
 
 
@@ -154,7 +149,6 @@ def plot_comparison(acc_fair, acc_vanilla):
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.bar([i - width / 2 for i in x], [a * 100 for a in acc_fair], width, label="Fair", color="#4c9be8")
     ax.bar([i + width / 2 for i in x], [a * 100 for a in acc_vanilla], width, label="Vanilla", color="#e8834c")
-
     ax.set_xlabel("Class (train samples)")
     ax.set_ylabel("Test accuracy (%)")
     ax.set_title("Per-class accuracy: FairSampler vs Vanilla")
@@ -180,7 +174,6 @@ def main():
     tfm = transforms.ToTensor()
     ds_full = datasets.MNIST("./data", train=True, download=True, transform=tfm)
     ds_test = datasets.MNIST("./data", train=False, download=True, transform=tfm)
-
     ds_train = make_longtail_subset(ds_full)
     test_loader = DataLoader(ds_test, batch_size=256)
 
@@ -213,10 +206,7 @@ def main():
             f"{sign}{delta:>6.1%}"
         )
     print("-" * 44)
-    print(
-        f"{'Mean':<8} {'':>8} "
-        f"{sum(acc_fair)/10:>7.1%} {sum(acc_vanilla)/10:>9.1%}"
-    )
+    print(f"{'Mean':<8} {'':>8} {sum(acc_fair)/10:>7.1%} {sum(acc_vanilla)/10:>9.1%}")
 
     if HAS_MATPLOTLIB:
         plot_comparison(acc_fair, acc_vanilla)

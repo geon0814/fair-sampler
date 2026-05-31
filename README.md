@@ -135,4 +135,5 @@ pytest tests/ -v
 - **권장 imbalance ratio: 10:1 이하**. 이 한계는 샘플 수에서 옵니다. tail class에 고유 샘플이 너무 적으면 oversampling이 같은 샘플을 반복 노출해 오히려 overfitting이 심해집니다. 컨트롤러가 tail을 N배 더 뽑으려면 per-class 샘플링 확률이 올라가는데, 고유 샘플 수가 충분하지 않으면 이 증가분이 새로운 정보를 제공하지 못합니다. 경험적으로 tail class에 200개 이상의 고유 샘플이 있을 때 gfs의 효과가 안정적으로 나타납니다.
 - `class_counts`를 제공하면 sqrt-frequency 목표를 사용합니다. uniform (1/K)과 inverse-frequency의 중간으로, head class를 완전히 억제하지 않으면서 tail을 부스팅합니다.
 - 샘플링 확률이 진동하는 것은 의도된 동작입니다 — 컨트롤러는 고정 분포로 수렴하지 않고 최근 imbalance를 지속적으로 보정합니다.
-- **`importance_weights` 사용 여부의 trade-off**: IW(`w = q[y]/p[y]`)를 쓰면 gradient가 목표 분포 `q` 아래에서 unbiased해지지만, 컨트롤러가 tail class를 heavy oversampling하는 시점에는 `w_tail < 1`이 되어 oversampling 효과를 일부 상쇄합니다. gradient의 통계적 정확도가 중요한 경우(예: 분포 추정, 공정성 감사)에는 IW를 사용하고, tail class 성능 극대화가 목표라면 oversampling만 사용하는 것이 실용적으로 유리합니다.
+- **`importance_weights`의 `q`는 반드시 학습 목표 분포여야 합니다.** `q`는 컨트롤러의 sampling target과 독립적으로 설정됩니다. `q=uniform`이면 모든 클래스를 동등하게 학습하고, `q=sqrt-freq`이면 head class에 더 가중치를 둡니다. `q`를 잘못 설정하면 IW가 sampling 보정이 아닌 gradient 왜곡으로 작동합니다. 일반적으로 `q = torch.ones(K) / K` (uniform)이 tail 성능에 가장 유리합니다.
+- **IW 버전은 충분한 에폭이 필요합니다.** IW는 gradient의 분산이 no-IW보다 크기 때문에 수렴이 느립니다. ep=7에서는 no-IW와 IW 간 차이가 크지만 ep=15에서는 두 버전 모두 유사한 성능에 도달합니다.
