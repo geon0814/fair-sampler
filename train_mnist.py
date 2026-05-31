@@ -89,7 +89,7 @@ def train_fair(ds_train, device, epochs=7):
     labels = torch.tensor([ds_train.dataset.targets[i].item() for i in ds_train.indices])
 
     total = sum(LONGTAIL_COUNTS)
-    steps = max(39, total // 256)
+    steps = total // 256  # dataset 크기에 비례, 하드코딩 없음
 
     controller = SimpleFairController(
         num_classes=10, alpha=2.0, lr=0.3, class_counts=LONGTAIL_COUNTS
@@ -107,6 +107,12 @@ def train_fair(ds_train, device, epochs=7):
     opt = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
     loss_fn = nn.CrossEntropyLoss()
 
+    # importance_weights를 쓰지 않는 이유:
+    # IW(w = q/p)는 gradient를 q 분포에서 unbiased하게 만들지만,
+    # 수렴 중 p_tail > q_tail이 되면 w_tail < 1로 tail class를 다시 down-weight한다.
+    # 결과적으로 tail class가 받는 effective gradient = p_tail × w_tail = q_tail (자연 빈도 수준).
+    # oversampling의 tail 부스팅 효과를 IW가 상쇄하므로 이 데모에서는 biased oversampling을 선택.
+    # IW는 gradient의 statistical 정확도가 중요할 때(unbiased estimation 필요 시) 사용할 것.
     for ep in range(epochs):
         for step, (x, y) in enumerate(loader):
             x, y = x.to(device), y.to(device)
