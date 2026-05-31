@@ -16,7 +16,8 @@ except ImportError:
     HAS_MATPLOTLIB = False
 
 SEED = 42
-LONGTAIL_COUNTS = [5000, 2500, 1250, 600, 300, 150, 75, 40, 20, 10]
+# 10:1 imbalance, 최소 300개 → 과적합 없이 tail 학습 가능
+LONGTAIL_COUNTS = [3000, 2500, 2000, 1600, 1200, 900, 700, 550, 400, 300]
 
 
 def set_seed(seed: int) -> None:
@@ -45,11 +46,13 @@ class MLP(nn.Module):
         super().__init__()
         self.net = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(28 * 28, 128),
+            nn.Linear(28 * 28, 256),
             nn.ReLU(),
-            nn.Linear(128, 64),
+            nn.Dropout(0.3),
+            nn.Linear(256, 128),
             nn.ReLU(),
-            nn.Linear(64, 10),
+            nn.Dropout(0.3),
+            nn.Linear(128, 10),
         )
 
     def forward(self, x):
@@ -85,34 +88,34 @@ def train_fair(ds_train, device, epochs=7):
     aug_ds = AugmentedDataset(ds_train, class_counts=LONGTAIL_COUNTS)
     labels = torch.tensor([ds_train.dataset.targets[i].item() for i in ds_train.indices])
 
+    total = sum(LONGTAIL_COUNTS)
+    steps = max(39, total // 256)
+
     controller = SimpleFairController(
-        num_classes=10, alpha=30.0, lr=1.0, class_counts=LONGTAIL_COUNTS
+        num_classes=10, alpha=2.0, lr=0.3, class_counts=LONGTAIL_COUNTS
     )
     sampler = FairSampler(
         labels=labels,
         controller=controller,
         batch_size=256,
-        steps_per_epoch=39,
+        steps_per_epoch=steps,
         generator=torch.Generator().manual_seed(SEED),
     )
     loader = DataLoader(aug_ds, batch_sampler=sampler)
 
     model = MLP().to(device)
-    opt = optim.Adam(model.parameters(), lr=1e-3)
-    loss_fn = nn.CrossEntropyLoss(reduction="none")
-    q = torch.ones(10) / 10
+    opt = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
+    loss_fn = nn.CrossEntropyLoss()
 
     for ep in range(epochs):
         for step, (x, y) in enumerate(loader):
             x, y = x.to(device), y.to(device)
             opt.zero_grad()
-            p = controller.get_class_probs()
-            w = importance_weights(y.cpu(), q, p).to(device)
-            loss = (w * loss_fn(model(x), y)).mean()
+            loss = loss_fn(model(x), y)
             loss.backward()
             opt.step()
             controller.step(y.cpu())
-            if (step + 1) % 20 == 0:
+            if (step + 1) % 40 == 0:
                 controller.log(ep, step, loss.item())
 
     return model
@@ -120,10 +123,10 @@ def train_fair(ds_train, device, epochs=7):
 
 def train_vanilla(ds_train, device, epochs=7):
     set_seed(SEED)
-    loader = DataLoader(ds_train, batch_size=128, shuffle=True)
+    loader = DataLoader(ds_train, batch_size=256, shuffle=True)
 
     model = MLP().to(device)
-    opt = optim.Adam(model.parameters(), lr=1e-3)
+    opt = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
     loss_fn = nn.CrossEntropyLoss()
 
     for _ in range(epochs):
